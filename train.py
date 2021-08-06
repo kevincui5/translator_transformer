@@ -101,11 +101,10 @@ if ckpt_manager.latest_checkpoint:
   
 
 
-train_loss = tf.keras.metrics.Mean(name='train_loss')
-train_accuracy = tf.keras.metrics.Mean(name='train_accuracy')
+train_loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+metrics=['SparseCategoricalCrossentropy', 'SparseCategoricalAccuracy']
 
 early_stopping = EarlyStopping(monitor='train_loss', patience=2)
-transformer.compile(optimizer, train_loss, train_accuracy)  
-transformer.fit(train_batches, epochs=EPOCHS, steps_per_epoch=steps_per_epoch, 
-              verbose=3, callbacks=[early_stopping])
+transformer.compile(optimizer, train_loss, metrics)  
+transformer.fit(train_batches, epochs=EPOCHS, steps_per_epoch=steps_per_epoch)
 

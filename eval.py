@@ -54,8 +54,8 @@ def predict(sentence, max_length=40):
         encoder_input, output)
 
     # predictions.shape == (batch_size, seq_len, vocab_size)
-    predictions, attention_weights = transformer(encoder_input,
-                                                 output,
+    predictions, attention_weights = transformer((encoder_input,
+                                                 output),
                                                  False)
 
     # select the last word from the seq_len dimension

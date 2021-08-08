@@ -15,7 +15,7 @@ class Transformer(tf.keras.Model):
 
     self.final_layer = tf.keras.layers.Dense(target_vocab_size)
 
-  def call(self, data, training=True):
+  def call(self, data, training):
     inp, tar = data
     enc_output = self.encoder(inp, training)  # (batch_size, inp_seq_len, d_model)
 

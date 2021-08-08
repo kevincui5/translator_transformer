@@ -3,55 +3,46 @@
 
 ![Compatibility](img/Python-3.7-blue.svg)![Compatibility](img/Tensorflow-2.4-blue.svg)
 
-In this tutorial we will improve the Transformer model for language understanding tutorial from tensorflow website and make it more "object oriented" by using tensorflow 2 feature such as subclass Keras layers and models classes and use Keras model's build-in compile and fit function.
+In this tutorial I would like to improve the [Transformer model for language understanding](https://www.tensorflow.org/text/tutorials/transformer)  tutorial from tensorflow website since the code is for demonstration purpose.  I'd like to make it more "object oriented" by using tensorflow 2 features such as subclass Keras layers and models classes and use Keras model's build-in compile and fit function.  Doing so will make the code easier to understand, make change, and maintain.
 
-
-Though Keras NMT with attention tutorial already shows how to implement a basic NMT model with attention with tensorflow, it would be interesting to try out some other new functionality comes out since tensorflow 2.2.  Since in this model the logic in training and evaluating loop is different (in training, teacher's forcing is used) and it would be a good test case to implement these features.
-Also by subclassing keras model and overriding train_step and test_step for customized training and inference loop, we are able to use the many features come with keras model, such as fit, evaluate, metric, etc...
-
-Implementing NMT with attention using functional API is ok but 
-hard to maintain the code.  Using the subclassing (objected oriented) approach produce much clearner code.
+I have done similar thing in [my other tutorial](https://github.com/kevincui5/translator_tf) on NMT with attention machanism.
 
 ## Difference between transformer model and encoder-decoder attention mechanism
-Encoder, Decoder, and BahdanauAttention are all layers, and Translator is a model.
+Transformer is no longer a RNN, and  that is why you don't see LTSM or GRU any where in the Transformer encoder and decoder.  Instead, there are causal attention layers which no longer do sequantial computation per layer, but in a single step.  For details please see the original tutorial.
 
-`
-class Encoder(Layer):
-`
 
-`
-class Decoder(Layer):
-`
-
-`
-class BahdanauAttention(Layer):
-`
-
-The __init__() function of the base Layer class takes some keyword arguments, in particular a name and a dtype. It's good practice to pass these arguments to the parent class in __init__() and to include them in the layer config:
+In order to use Keras model.fit() function for training, our model's call function need to have signature of self, data, and training:
 
 ```
-class Translator(tf.keras.Model):
-    def __init__(self, vocab_inp_size, vocab_tar_size, embedding_dim, 
-                 hidden_units_num, name="Translator", 
-                 **kwargs):
-      super(Translator, self).__init__(name=name, **kwargs)
+class Transformer(tf.keras.Model):
+    ...
+    def call(self, data, training=True):
+    ...
+```      
+All the masks parameters in original tutorial can be moved to inner layers' implementations.  For example in Encoder class:
+```
+class Encoder(tf.keras.layers.Layer):
+    ...
+    def call(self, x, training):
+        mask = self.create_padding_mask(x)
+        ...
+```
+Our transformer, a custom keras model, inherits the training argument from Layer, knows by itself when to pass True or False to training argument.  For example, when you call model.fit, it will pass True to Transformer's call function and trickle down to encoder and decoder layer and tell for example dropout layer to behave accordingly.
+```
+transformer.fit(train_batches, epochs=EPOCHS, steps_per_epoch=steps_per_epoch)
+```
+This is run in training mode
+```
+predictions, attention_weights = transformer((encoder_input, output))
+
+```
+This is run in inference mode, no need to explicitly specify train mode
+
+By assigning Keras Layers' instance as attributes of other Layers, all the weights, including that of inner layers become trackable:
+```
+gradients = tape.gradient(loss, self.trainable_variables)
 ```      
 
-By assigning Keras Layers' instance as attributes of other Layers, the weights of inner layer become trackable:
-```
-class Translator(tf.keras.Model):
-    def __init__(self, vocab_inp_size, vocab_tar_size, embedding_dim, 
-                 hidden_units_num, name="Translator", 
-                 **kwargs):
-      super(Translator, self).__init__(name=name, **kwargs)
-      self.encoder = Encoder(vocab_inp_size, embedding_dim, hidden_units_num)
-      self.decoder = Decoder(vocab_tar_size, embedding_dim, hidden_units_num)
-```      
-So Translator model is composed of Decoder and Encoder Layers, and Decoder Layer is composed of Embedding, LSTM, Dense, and BahdanauAttention.  By doing so, all the weights from all these layers are trackable, making accessing trainable weights very easy:
-```
-trainable_vars = self.trainable_variables    
-gradients = tape.gradient(loss, trainable_vars)
-``` 
 Note: we lazily create layers' weights during layers' instantiation like Kera's best practice guide suggests.  Notice there is no input_shape specified in lstm __init__() or input_length in embedding init():
 
 ```
@@ -65,7 +56,7 @@ class Encoder(Layer):
                                       return_state = True))
     self.bi_LSTM = Bidirectional(LSTM(units, return_sequences=True))
 ```
-Other things you can do with an individual Keras Layer are customizing loss and metric, making it trainable or not etc.
+
 
 ## Loss Function
 For the loss function, you can either implement one like that in the original tutorial, or use the Keras' build-in loss functions passed in through model.compile():
@@ -124,28 +115,7 @@ def train_step(self, data):
 ```
 Here, teacher's forcing is used, just like in the original Keras tutorial, where ground truth at time step t is extracted and feed in as decoder's input.
 
-## Override test_step()
-```
-def forward_pass(self, inp, targ):   
-      enc_output, enc_hidden, enc_cell = self.encoder(inp) #inp shape (batch_size, Tx)
-      dec_hidden = enc_hidden # (batch_size,dec_units)  #if encoder and decoder hidden units # diff, need to initialize dec_hidden accordingly
-      dec_cell = enc_cell
-      Ty = targ.shape[1]
-      dec_input = tf.expand_dims(targ[:,0], 1) 
-      y_pred = tf.TensorArray(tf.float32, size=Ty)
-      for t in range(Ty):   #targ.shape[1] is Ty
-        # passing enc_output to the decoder. prediction shape == (batch_size, vocab_tar_size)
-        predictions, dec_hidden, dec_cell, _ = self.decoder(dec_input, dec_hidden, 
-                                                       dec_cell, enc_output) #throws away attension weights
-        predicted_id = tf.math.argmax(predictions, axis=-1) #predicted_id shape == (batch_size,)
-        #(Ty, batch_size)
-        y_pred = y_pred.write(t, predictions)
-        dec_input = tf.expand_dims(predicted_id, 1)
-        self.compiled_loss(targ[:, t], predictions, regularization_losses=self.losses)
-        self.compiled_metrics.update_state(targ[:, t], predictions)
-      y_pred = tf.transpose(y_pred.stack(), [1, 0, 2])
-      return y_pred
-```
+
 Here in the forward pass, at each time step, y_pred is appended to TensorArray.  Then at the end the prediction tensor is transposed so that first dimension is batch size, second is timestep.  greedy sampling method is used here, where max is applied on the probability distribution and converted to word index.  Beam search can be implemented here.
 Again TensorArray is used here instead of python list to avoid potential python side effects as suggested by tensorflow guide as best practice.
 

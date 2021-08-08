@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from util import create_masks, print_translation, CustomSchedule
+from util import print_translation, CustomSchedule
 from transformer import Transformer
 import tensorflow as tf
 import tensorflow_text as text
@@ -50,8 +50,8 @@ def predict(sentence, max_length=40):
     
   ckpt.restore(ckpt_manager.latest_checkpoint)
   for i in range(max_length):
-    enc_padding_mask, combined_mask, dec_padding_mask = create_masks(
-        encoder_input, output)
+    # enc_padding_mask, combined_mask, dec_padding_mask = create_masks(
+    #     encoder_input, output)
 
     # predictions.shape == (batch_size, seq_len, vocab_size)
     predictions, attention_weights = transformer((encoder_input,

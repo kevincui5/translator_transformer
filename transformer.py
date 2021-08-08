@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import tensorflow as tf
 from model import Encoder, Decoder
-from util import CustomSchedule
 
 class Transformer(tf.keras.Model):
   def __init__(self, num_layers, d_model, num_heads, dff, input_vocab_size,
@@ -42,26 +41,3 @@ class Transformer(tf.keras.Model):
     self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
     self.compiled_metrics.update_state(tar_real, predictions)
     return {m.name: m.result() for m in self.metrics}
-  
-  # def loss_function(self, real, pred):
-  #     mask = tf.math.logical_not(tf.math.equal(real, 0))
-      
-  #     loss_object = tf.keras.losses.SparseCategoricalCrossentropy(
-  #     from_logits=True, reduction='none')
-  #     loss_ = loss_object(real, pred)
-    
-  #     mask = tf.cast(mask, dtype=loss_.dtype)
-  #     loss_ *= mask
-    
-  #     return tf.reduce_sum(loss_)/tf.reduce_sum(mask)
-    
-  # def accuracy_function(self, real, pred):
-  #   accuracies = tf.equal(real, tf.argmax(pred, axis=2))
-  
-  #   mask = tf.math.logical_not(tf.math.equal(real, 0))
-  #   accuracies = tf.math.logical_and(mask, accuracies)
-  
-  #   accuracies = tf.cast(accuracies, dtype=tf.float32)
-  #   mask = tf.cast(mask, dtype=tf.float32)
-  #   return tf.reduce_sum(accuracies)/tf.reduce_sum(mask)
-    

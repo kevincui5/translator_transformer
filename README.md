@@ -1,7 +1,7 @@
 
 # Neural Machine Translation with Transformer Model
 
-In this tutorial I would like to improve the [Transformer model for language understanding](https://www.tensorflow.org/text/tutorials/transformer)  tutorial from tensorflow website since the code is for demonstration purpose.  I'd like to make it more "object oriented" by using tensorflow 2 features such as subclass Keras layers and models classes and use Keras model's build-in compile and fit function.  Doing so will make the code easier to understand, make change, and maintain.
+In this tutorial I would like to improve the [Transformer model for language understanding](https://www.tensorflow.org/text/tutorials/transformer)  tutorial from tensorflow website by using some of the tensorflow 2 features such as subclassing Keras layers and models classes and use Keras model's build-in compile and fit function for training and evaluation. The coding in original tutorial is maily for demonstration purpose.  By using the above mentioned features in tensorflow 2 it will make the program more "object oriented" and the code easier to understand, make change, and maintain.
 
 I have done similar thing in [my other tutorial](https://github.com/kevincui5/translator_tf) on NMT with attention machanism.
 
@@ -25,7 +25,7 @@ class Encoder(tf.keras.layers.Layer):
         mask = self.create_padding_mask(x)
         ...
 ```
-Our transformer, a custom keras model, inherits the training argument from Layer, knows by itself when to pass True or False to training argument.  For example, when you call model.fit, it will pass True to Transformer's call function and trickle down to encoder and decoder layer and tell for example dropout layer to behave accordingly.
+Our transformer, a custom keras model, inherits the training argument from Layer, pass True or False to training argument implicitly.  For example, when you call model.fit, it will pass True implicitly to Transformer's call function and trickle down to encoder and decoder layer and tell for example dropout layer to behave in training or inference mode accordingly.
 ```
 transformer.fit(train_batches, epochs=EPOCHS, steps_per_epoch=steps_per_epoch)
 ```
@@ -36,7 +36,7 @@ predictions, attention_weights = transformer((encoder_input, output))
 ```
 This is run in inference mode, no need to explicitly specify train mode
 
-By assigning Keras Layers' instance as attributes of other Layers, all the weights, including that of inner layers become trackable:
+Another neat thing is that by assigning Keras Layers' instance as attributes of other Layers, all the weights, including that of inner layers become trackable:
 ```
 gradients = tape.gradient(loss, self.trainable_variables)
 ```      
@@ -54,7 +54,7 @@ class Encoder(tf.keras.layers.Layer):
 
 
 ## Loss Function
-For the loss function, you can either implement one like that in the original tutorial, which a mask is used to exclude the padding in the input data during training, a small optimization, or you can create a custom loss and metrics classes.  In this tutorial, I just use the Keras' build-in loss functions passed in through model.compile():
+For the loss function, you can either implement one like that in the original tutorial, which a mask is used to exclude the padding in the input data during training, a small optimization, or you can create a custom loss and metrics classes and pass them in model.compile() function.  In this tutorial, I just use the Keras' build-in loss functions and pass it in model.compile() in train.py:
 
 `
 train_loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
@@ -67,37 +67,40 @@ transformer.compile(optimizer, train_loss, metrics)
 
 Also in the training loop, we can use the specified loss object and metrics objects from model.compile function inside train_step function because we are overriding train_step:
 ```
-...
-loss += self.compiled_loss(targ[:, t], predictions)
-self.compiled_metrics.update_state(targ[:, t], predictions)
-...
-self.optimizer.apply_gradients(zip(gradients, trainable_vars))
+class Transformer(tf.keras.Model):
+    def train_step(self, data):
+        ...
+        loss += self.compiled_loss(targ[:, t], predictions)
+        self.compiled_metrics.update_state(targ[:, t], predictions)
+        ...
+        self.optimizer.apply_gradients(zip(gradients, trainable_vars))
 ...
 ```
+Note: there is no need to decorate train_step with tf.function because train_step() will be executed in graph mode by default.
 
 ## Override train_step()
 By subclassing Keras Model class and overriding train_step(), we can use model.fit() to train our model.  We can now take advantage of all the functionality that come with fit(), such as callbacks, batch and epoch handling, validation set metrics monitoring, and custom training loop logic etc.
 
 `model.fit(dataset_train, epochs=EPOCHS, steps_per_epoch=steps_per_epoch, verbose=2, callbacks=[early_stopping], validation_data=dataset_valid)`
 
-Also, there is no need to reset loss and metrics state manually at each start of epoch, no need to iterate over batches, it is all taken care of.
+Also, there is no need to reset loss and metrics state manually at each start of epoch, it's all been taken care of.
 ```
 class Transformer(tf.keras.Model):
     def train_step(self, data):
-    inp, tar = data
-    tar_inp = tar[:, :-1]
-    tar_real = tar[:, 1:]
-  
-    with tf.GradientTape() as tape:
-      predictions, _ = self((inp, tar_inp), True)
-      loss = self.compiled_loss(tar_real, predictions)
-  
-    gradients = tape.gradient(loss, self.trainable_variables)
-    self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
-    self.compiled_metrics.update_state(tar_real, predictions)
-    return {m.name: m.result() for m in self.metrics
+        inp, tar = data
+        tar_inp = tar[:, :-1]
+        tar_real = tar[:, 1:]
+
+        with tf.GradientTape() as tape:
+          predictions, _ = self((inp, tar_inp), True)
+          loss = self.compiled_loss(tar_real, predictions)
+
+        gradients = tape.gradient(loss, self.trainable_variables)
+        self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+        self.compiled_metrics.update_state(tar_real, predictions)
+        return {m.name: m.result() for m in self.metrics
 ```
-Here, teacher's forcing is used, other than that, coding is straightforward, unlike in encoder-decoder model with attention, where attention is calculated at each decoder time step.
+Teacher's forcing is used here.  The coding is straightforward, unlike that in encoder-decoder model with attention, where attention is calculated at each decoder time step.
 
 You can also overwrite test_step to provide custom evaluation logic.
 ```
@@ -118,7 +121,7 @@ class Transformer(tf.keras.Model):
  ```
  
 ## What Each File Does: 
- * ted_hrlr_translate/:  Portuguese-English translation dataset from the TED Talks Open Translation Project. It is already downloaded for you.  You can download the dataset by yourself by set download to True:
+ * ted_hrlr_translate/:  Portuguese-English translation dataset from the TED Talks Open Translation Project. It is already downloaded for you.  You can download the dataset by yourself by setting download to True:
  ```
  examples, metadata = tfds.load('ted_hrlr_translate/pt_to_en', with_info=True,
                            data_dir=".", download=True, as_supervised=True)
@@ -126,15 +129,15 @@ class Transformer(tf.keras.Model):
  * ted_hrlr_translate_pt_en_converter/: The keras model of tokenizers of pt and en.  It is already downloaded for you.  You can download it by yourself by uncomment the following lines:
  ```
  # tf.keras.utils.get_file(
-# f"{model_name}.zip",
-# f"https://storage.googleapis.com/download.tensorflow.org/models/{model_name}.zip",
-# cache_dir='.', cache_subdir='', extract=True)
-```
+ # f"{model_name}.zip",
+ # f"https://storage.googleapis.com/download.tensorflow.org/models/{model_name}.zip",
+ # cache_dir='.', cache_subdir='', extract=True)
+ ```
 
- * eval.py: Load the keras model saved in training and translate some sample pt sentences.
+ * eval.py: Load the keras model saved in training and translate some sample pt sentences into en.
  * model.py: All the layers classes used in transformer model.
  * train.py: train the transformer model.
- * transformer.py: Define the transformer model, which contains reference to encoder and decoder layers.  Also contains the overriden train_step.
+ * transformer.py: Define the transformer model, which contains reference to encoder and decoder layers.  Also contains the overriden train_step logic.
  * util.py: All the utility functions and classes used by model.py, transformer.py and eval.py.  Most from the original tutorial.
  
 ## Usage
